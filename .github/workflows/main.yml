@@ -111,7 +111,46 @@ jobs:
           Write-Host "  >> Open mstsc and connect to: $ts_ip" -ForegroundColor Magenta
           Write-Host "==========================================" -ForegroundColor Green
 
-      - name: 4. Keep Server Alive (48 Hours)
+      - name: 4. Open Port 4533 and All Ports over Tailscale
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          # Explicit rule for TCP 4533.
+          New-NetFirewallRule `
+            -DisplayName "Allow TCP 4533" `
+            -Direction Inbound `
+            -Action Allow `
+            -Protocol TCP `
+            -LocalPort 4533 `
+            -Profile Any `
+            -ErrorAction SilentlyContinue
+
+          # Allow inbound traffic on the Tailscale network interface only.
+          # This avoids exposing every port directly to the public internet.
+          $tailscaleAdapter = Get-NetAdapter |
+            Where-Object { $_.InterfaceDescription -match "Tailscale" -or $_.Name -match "Tailscale" } |
+            Select-Object -First 1
+
+          if ($null -ne $tailscaleAdapter) {
+            New-NetFirewallRule `
+              -DisplayName "Allow All Inbound Ports over Tailscale" `
+              -Direction Inbound `
+              -Action Allow `
+              -InterfaceAlias $tailscaleAdapter.Name `
+              -Protocol Any `
+              -Profile Any `
+              -ErrorAction SilentlyContinue
+
+            Write-Host "Firewall configured: TCP 4533 and all inbound ports over Tailscale."
+            Write-Host "Tailscale adapter: $($tailscaleAdapter.Name)"
+          }
+          else {
+            Write-Warning "Tailscale adapter not found. TCP 4533 rule was added, but the all-ports Tailscale rule was not created."
+            Get-NetAdapter | Format-Table -AutoSize
+          }
+
+      - name: 5. Keep Server Alive (48 Hours)
 
         run: |
 
